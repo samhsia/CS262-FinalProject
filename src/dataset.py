@@ -2,7 +2,7 @@ import sys
 import random
 import argparse
 import numpy as np
-from tensorflow.python.keras.datasets import mnist, cifar10
+from tensorflow.keras.datasets import mnist, cifar10
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -11,7 +11,7 @@ import torch.optim as optim
 def get_dataset():
 
     # Load mnist
-    #(X_train_orig, Y_train_orig), (X_test_orig, Y_test_orig) = mnist.load_data()
+    # (X_train_orig, Y_train_orig), (X_test_orig, Y_test_orig) = mnist.load_data()
     (X_train_orig, Y_train_orig), (X_test_orig, Y_test_orig) = cifar10.load_data()
 
     # Flatten

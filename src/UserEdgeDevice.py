@@ -2,7 +2,7 @@ import sys
 import random
 import argparse
 import numpy as np
-from tensorflow.python.keras.datasets import mnist, cifar10
+from tensorflow.keras.datasets import mnist, cifar10
 import torch
 import torch.nn as nn
 import torch.nn.functional as F

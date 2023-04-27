@@ -2,9 +2,9 @@ import matplotlib.pyplot as plt
 
 from dataset import *
 
-from MultiModelServer import *
-from SingleModelServer import *
-from SingleModelServer_weightedagg import *
+from multimodelserver import *
+from singlemodelserver import *
+from singlemodelserver_weightedagg import *
 
 from UserEdgeDevice import *
 
@@ -30,8 +30,8 @@ def run_and_plot_methods(servers, fname):
 
 def full_scan(n_devices, n_rounds, n_points_per_device, n_sampled_points_per_update):
     dataset = get_dataset()
-    dataset_sampling_methods = [sample_dataset_non_iid, sample_dataset_iid]
-    server_methods = [MultiModelServer, SingleModelServer]
+    dataset_sampling_methods = [sample_dataset_iid]
+    server_methods = [SingleModelServer]
     server_kwargs = {"n_rounds" : n_rounds,
                      "lr" : 1e-3}
 
