@@ -114,7 +114,9 @@ def main():
     parser.add_argument("--num-samples-per-update", type=int, default=100, help='Number of training samples per device update.')
     parser.add_argument("--sampling-method", type=str, default='iid', help='Dataset sampling method')
     parser.add_argument("--server-ip", type=str, default='localhost', help='Server IP address')
-    parser.add_argument("--enable-malicious-agent", type=bool, default='False', help='Enable malicious agents.')
+    parser.add_argument("--enable-malicious-agent", type=str, default='False', help='Enable malicious agents.')
+    parser.add_argument("--num-malicious-agent", type=int, default=1, help='Number of malicious agents.')
+    parser.add_argument("--noise-level", type=int, default=1, help='Multiply of random.random (0~1)')
     args = parser.parse_args()
 
     devices = []
@@ -122,8 +124,7 @@ def main():
         devices.append(SingleModelClient(device_num+1, args.dataset_name, args.lr, args.num_samples_per_device, args.num_samples_per_update, args.sampling_method, args.server_ip, args.enable_malicious_agent))
         print('CLIENT ({}/{}) connected to server @ {}:{}'.format(device_num+1, args.num_devices, args.server_ip, PORT))
 
-    malicious_agent = random.randint(0,args.num_devices-1)
-    # malicious_agent = -1
+    # malicious_agent = random.randint(0,args.num_devices-1)
     iteration = 0
     while True:
         iteration += 1
@@ -134,10 +135,10 @@ def main():
             tmp_grad = devices[device_num].compute_gradient()
             # print(torch.max(torch.abs(tmp_grad[0])))
             # Malicious agent: noisy gradient update
-            if args.enable_malicious_agent:
-                if iteration > 30:
-                    if device_num == malicious_agent:
-                        tmp_grad[0] += (10 * random.random())
+            if args.enable_malicious_agent == "True":
+                if iteration > 40:
+                    if device_num < args.num_malicious_agent:
+                        tmp_grad[0] += (args.noise_level * random.random())
             gradients.append(tmp_grad)
             # print('{} Computed gradients'.format(device_num+1))
 

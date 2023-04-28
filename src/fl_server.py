@@ -18,12 +18,14 @@ PORT        = 1234 # base application port for leader server
 SERVER_IP      = 'localhost' # REPLACE ME with output of ipconfig getifaddr en0
 MAX_CLIENTS    = 100
 
+profile_max = []
 class SingleModelServer:
     def aggregate_gradients(self, round):
         sum_of_gradients = None
         self.num_malicious_agent = 0
         print("self.list_of_malicious_agent: ", self.list_of_malicious_agent)
         print("self.count_of_anomaly: ", self.count_of_anomaly)
+
         for sock_idx, sock in enumerate(self.active_sockets):
             Anomaly = False
             device_gradients = []
@@ -43,11 +45,13 @@ class SingleModelServer:
                 device_gradients.append(msg)
             device_gradients = pickle.loads(b"".join(device_gradients))
             # Anomaly detection
-            if self.enable_anomaly_detection:
+            if self.enable_anomaly_detection == "True":
                 if sock_idx in self.list_of_malicious_agent:
                     continue
-                if round > 30:
+                if round > 40:
                     for layer in device_gradients:
+                        profile_max.append(torch.max(torch.abs(layer)))
+                        print(torch.max(torch.abs(layer)))
                         if torch.max(torch.abs(layer)) > self.normal_max:
                             # print(sock_idx, torch.max(torch.abs(layer)) )
                             Anomaly = True
@@ -60,7 +64,7 @@ class SingleModelServer:
                     sum_of_gradients = [x.data+device_gradients[i].data for i,x in enumerate(sum_of_gradients)]
             else:
                 self.count_of_anomaly[sock_idx] += 1
-                if self.count_of_anomaly[sock_idx] > 3:
+                if self.count_of_anomaly[sock_idx] > 1:
                     self.list_of_malicious_agent.append(sock_idx)
                 self.num_malicious_agent += 1
             
@@ -148,7 +152,7 @@ def main():
     parser.add_argument("--num-devices", type=int, default=10, help='Number of devices.')
     parser.add_argument("--num-rounds", type=int, default=100, help='Number of rounds.')
     parser.add_argument("--perc-devices-per-round", type=float, default=1.0, help='Target percentage of devices participating in each round.')
-    parser.add_argument("--enable-anomaly-detection", type=bool, default=False, help='Enable anomaly detection to recover from noisy gradient update of malicious agent.')
+    parser.add_argument("--enable-anomaly-detection", type=str, default=False, help='Enable anomaly detection to recover from noisy gradient update of malicious agent.')
     args = parser.parse_args()
 
     server = SingleModelServer(args.lr, args.num_devices, args.num_rounds, args.perc_devices_per_round, args.enable_anomaly_detection)
