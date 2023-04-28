@@ -37,7 +37,12 @@ class SingleModelClient:
         while True:
             msg = self.client.recv(BUFFER_SIZE)
             if not msg:
+                print('ERROR: server disconnected')
                 break
+            if len(msg) != 2048:
+                if msg[-6:].decode(encoding=ENCODING) == 'FINISH':
+                    aggregated_gradients.append(msg[:-6])
+                    break
             aggregated_gradients.append(msg)
         aggregated_gradients = pickle.loads(b"".join(aggregated_gradients))
         
@@ -59,27 +64,34 @@ class SingleModelClient:
         return acc
 
     def run(self):
-        return
-        # Compute gradients
-        # gradients = self.compute_gradient()
+        while True:
+            # Compute gradients
+            gradients = self.compute_gradient()
+            print('Computed gradients')
+            
+            # Send gradients
+            self.client.send(pickle.dumps(gradients))
+            self.client.send('FINISH'.encode(encoding=ENCODING))
+            print('Sent gradients')
 
-        # Send gradients
-        # self.client.send(pickle.dumps(gradients))
+            # Recieve aggregated gradients and update model
+            self.update_model()
+            print ('Recieved aggregated gradients and updated model')
 
-        # Recieve aggregated gradients and update model
-        # self.update_model()
-
-
+            accuracy = self.evaluate_model()
+            print('Accuracy: {}%'.format(accuracy))
 
     def __init__(
         self,
         dataset_name,
+        lr,
         num_samples_per_device,
         num_samples_per_update,
         sampling_method,
         server_ip,
     ):
         self.dataset_name           = dataset_name
+        self.lr                     = lr
         self.num_samples_per_device = num_samples_per_device
         self.num_samples_per_update = num_samples_per_update
         self.sampling_method        = sampling_method
@@ -97,21 +109,6 @@ class SingleModelClient:
         self.client = socket(family=AF_INET, type=SOCK_STREAM)
         self.client.connect((self.server_ip, PORT))
 
-        # Compute gradients
-        gradients = self.compute_gradient()
-        print('Computed gradients')
-        
-        # Send gradients
-        self.client.send(pickle.dumps(gradients))
-        print('Sent gradients')
-
-        # Recieve aggregated gradients and update model
-        # self.update_model()
-        print ('Recieved aggregated gradients and updated model')
-
-        accuracy = self.evaluate_model()
-        print(accuracy)
-
 def main():
     print("********** Federated Serving: CLIENTS **********")
 
@@ -124,12 +121,13 @@ def main():
     parser.add_argument("--num-samples-per-device", type=int, default=5000, help='Number of training samples per device.')
     parser.add_argument("--num-samples-per-update", type=int, default=100, help='Number of training samples per device update.')
     parser.add_argument("--sampling-method", type=str, default='iid', help='Dataset sampling method')
-    parser.add_argument("--server-ip", type=str, default='100.90.130.16', help='Server IP address')
+    parser.add_argument("--server-ip", type=str, default='localhost', help='Server IP address')
     args = parser.parse_args()
 
     for client_num in range(1, args.num_devices+1):
-        client = SingleModelClient(args.dataset_name, args.num_samples_per_device, args.num_samples_per_update, args.sampling_method, args.server_ip)
+        client = SingleModelClient(args.dataset_name, args.lr, args.num_samples_per_device, args.num_samples_per_update, args.sampling_method, args.server_ip)
         print('CLIENT ({}/{}) connected to server @ {}:{}'.format(client_num, args.num_devices, args.server_ip, PORT))
+    
     for client_num in range(1, args.num_devices+1):
         client.run()
 
