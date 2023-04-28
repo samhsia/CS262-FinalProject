@@ -1,10 +1,9 @@
+# Import packages
 import matplotlib.pyplot as plt
 
 from dataset import *
 
-from multimodelserver import *
 from singlemodelserver import *
-from singlemodelserver_weightedagg import *
 
 from UserEdgeDevice import *
 
