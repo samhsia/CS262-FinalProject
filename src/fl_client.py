@@ -9,6 +9,8 @@ import torch
 
 from data import get_dataset
 from net import Net_CIFAR, Net_MNIST
+import torch
+import random
 
 # Constants/configurations
 ENCODING    = 'utf-8' # message encoding
@@ -77,6 +79,7 @@ class SingleModelClient:
         num_samples_per_update,
         sampling_method,
         server_ip,
+        enable_malicious_agent
     ):
         self.device_num             = device_num
         self.dataset_name           = dataset_name
@@ -85,7 +88,7 @@ class SingleModelClient:
         self.num_samples_per_update = num_samples_per_update
         self.sampling_method        = sampling_method
         self.server_ip              = server_ip
-
+        self.enable_malicious_agent = enable_malicious_agent
         self.num_compute = 0 # number of times calculating gradient
 
         # Create model
@@ -111,18 +114,31 @@ def main():
     parser.add_argument("--num-samples-per-update", type=int, default=100, help='Number of training samples per device update.')
     parser.add_argument("--sampling-method", type=str, default='iid', help='Dataset sampling method')
     parser.add_argument("--server-ip", type=str, default='localhost', help='Server IP address')
+    parser.add_argument("--enable-malicious-agent", type=bool, default='False', help='Enable malicious agents.')
     args = parser.parse_args()
 
     devices = []
     for device_num in range(args.num_devices):
-        devices.append(SingleModelClient(device_num+1, args.dataset_name, args.lr, args.num_samples_per_device, args.num_samples_per_update, args.sampling_method, args.server_ip))
+        devices.append(SingleModelClient(device_num+1, args.dataset_name, args.lr, args.num_samples_per_device, args.num_samples_per_update, args.sampling_method, args.server_ip, args.enable_malicious_agent))
         print('CLIENT ({}/{}) connected to server @ {}:{}'.format(device_num+1, args.num_devices, args.server_ip, PORT))
-    
+
+    malicious_agent = random.randint(0,args.num_devices-1)
+    # malicious_agent = -1
+    iteration = 0
     while True:
+        iteration += 1
+        print("iteration ", iteration)
         # Compute gradients
         gradients = []
         for device_num in range(args.num_devices):
-            gradients.append(devices[device_num].compute_gradient())
+            tmp_grad = devices[device_num].compute_gradient()
+            # print(torch.max(torch.abs(tmp_grad[0])))
+            # Malicious agent: noisy gradient update
+            if args.enable_malicious_agent:
+                if iteration > 30:
+                    if device_num == malicious_agent:
+                        tmp_grad[0] += (10 * random.random())
+            gradients.append(tmp_grad)
             # print('{} Computed gradients'.format(device_num+1))
 
         # Send gradients
