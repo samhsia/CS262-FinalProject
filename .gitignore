@@ -1,5 +1,6 @@
 *.tar.gz
 *cifar-10*
+*MNIST*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

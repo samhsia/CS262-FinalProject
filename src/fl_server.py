@@ -6,7 +6,7 @@ import random
 from socket import socket, AF_INET, SOCK_STREAM, SOL_SOCKET, SO_REUSEADDR
 from threading import Thread
 
-from net import Net
+from net import Net_CIFAR, Net_MNIST
 
 # Constants/configurations
 ENCODING    = 'utf-8' # message encoding
@@ -19,7 +19,7 @@ MAX_CLIENTS    = 100
 class SingleModelServer:
     def aggregate_gradients(self):
         sum_of_gradients = None
-        for sock in self.active_sockets:
+        for sock_idx, sock in enumerate(self.active_sockets):
             device_gradients = []
             while True:
                 msg = sock.recv(BUFFER_SIZE)
@@ -27,9 +27,13 @@ class SingleModelServer:
                     print('ERROR: client disconnected')
                     break
                 if len(msg) != 2048:
-                    if msg[-6:].decode(encoding=ENCODING) == 'FINISH':
-                        device_gradients.append(msg[:-6])
-                        break
+                    try:
+                        if msg[-6:].decode(encoding=ENCODING) == 'FINISH':
+                            device_gradients.append(msg[:-6])
+                            break
+                    except:
+                        device_gradients.append(msg)
+                        continue
                 device_gradients.append(msg)
             device_gradients = pickle.loads(b"".join(device_gradients))
             # Change to only add if you are a participating device
@@ -38,6 +42,7 @@ class SingleModelServer:
             else:
                 sum_of_gradients = [x.data+device_gradients[i].data for i,x in enumerate(sum_of_gradients)]
         for i, gradient in enumerate(sum_of_gradients):
+            # *** sum_of_gradients[i] = gradient + NOISE
             sum_of_gradients[i] = gradient / self.num_devices # change to participating devices
         
         return sum_of_gradients
@@ -45,24 +50,31 @@ class SingleModelServer:
     def run(self):
         for round in range(1, self.num_rounds+1):
             # Recieve and aggregate gradients
-            # participating_devices_sockets = [x for x in self.active_sockets if random.uniform(0, 1) <= self.perc_devices_per_round]
             aggregated_gradients = self.aggregate_gradients()
             print('Recieved and aggregated gradients')
 
-            # Send aggregated gradients
+            # Update model
+            for variable, gradient in zip(self.model.parameters(), aggregated_gradients):
+                variable.data.sub_(self.lr * gradient)
+            print('Updated model')
+
+            # Send model weights
+            model_weights = [x.data for x in self.model.parameters()]
             for sock in self.active_sockets:
-                sock.send(pickle.dumps(aggregated_gradients))
+                sock.send(pickle.dumps(model_weights))
                 sock.send('FINISH'.encode(encoding=ENCODING))
-            print('Sent aggregated gradients')
+            print('Sent model weights')
 
             print('Round {}/{} finished'.format(round, self.num_rounds))
 
     def __init__(
         self, 
+        lr,
         num_devices,
         num_rounds,
         perc_devices_per_round
     ):
+        self.lr                     = lr
         self.num_devices            = num_devices
         self.num_rounds             = num_rounds
         self.perc_devices_per_round = perc_devices_per_round # not implemented yet!
@@ -73,7 +85,7 @@ class SingleModelServer:
         self.total_computes = []
 
         # Create model
-        self.model = Net()
+        self.model = Net_MNIST()
 
         # Create server socket
         self.server = socket(AF_INET, SOCK_STREAM)
@@ -98,16 +110,14 @@ def main():
 
     # Parse arguments
     parser = argparse.ArgumentParser()
-    parser.add_argument("--num-devices", type=int, default=1, help='Number of devices.')
+    parser.add_argument("--lr", type=float, default=0.01, help='Learning rate')
+    parser.add_argument("--num-devices", type=int, default=10, help='Number of devices.')
     parser.add_argument("--num-rounds", type=int, default=100, help='Number of rounds.')
     parser.add_argument("--perc-devices-per-round", type=float, default=1.0, help='Target percentage of devices participating in each round.')
     args = parser.parse_args()
 
-    server = SingleModelServer(args.num_devices, args.num_rounds, args.perc_devices_per_round)
+    server = SingleModelServer(args.lr, args.num_devices, args.num_rounds, args.perc_devices_per_round)
     server.run()
-
-    # from plotting import full_scan
-    # full_scan(args.num_devices, args.num_rounds, args.num_points_per_device, args.num_sampled_points_per_update)
 
 if __name__ == '__main__':
     main()

@@ -4,14 +4,15 @@ import numpy as np
 import pickle
 
 from socket import socket, AF_INET, SOCK_STREAM
+import sys
 import torch
 
 from data import get_dataset
-from net import Net
+from net import Net_CIFAR, Net_MNIST
 
 # Constants/configurations
 ENCODING    = 'utf-8' # message encoding
-BUFFER_SIZE = 2048 # fixed 500KB buffer size
+BUFFER_SIZE = 2048 # fixed 2KB buffer size
 PORT        = 1234 # fixed application port
 
 class SingleModelClient:
@@ -33,22 +34,26 @@ class SingleModelClient:
     
     def update_model(self):
         # Recieve updated gradient
-        aggregated_gradients = []
+        new_model_weights = []
         while True:
             msg = self.client.recv(BUFFER_SIZE)
             if not msg:
                 print('ERROR: server disconnected')
                 break
             if len(msg) != 2048:
-                if msg[-6:].decode(encoding=ENCODING) == 'FINISH':
-                    aggregated_gradients.append(msg[:-6])
-                    break
-            aggregated_gradients.append(msg)
-        aggregated_gradients = pickle.loads(b"".join(aggregated_gradients))
+                try:
+                    if msg[-6:].decode(encoding=ENCODING) == 'FINISH':
+                        new_model_weights.append(msg[:-6])
+                        break
+                except:
+                    new_model_weights.append(msg)
+                    continue
+            new_model_weights.append(msg)
+        new_model_weights = pickle.loads(b"".join(new_model_weights))
         
         # Update model
-        for variable, gradient in zip(self.model.parameters(), aggregated_gradients):
-            variable.data.sub_(self.lr * gradient)
+        for variable, new_weights in zip(self.model.parameters(), new_model_weights):
+            variable.data = new_weights # *** + NOISE
 
     def evaluate_model(self):
         self.model.eval()
@@ -63,26 +68,9 @@ class SingleModelClient:
         acc = 100. * correct_samples / labels.shape[0]
         return acc
 
-    def run(self):
-        while True:
-            # Compute gradients
-            gradients = self.compute_gradient()
-            print('Computed gradients')
-            
-            # Send gradients
-            self.client.send(pickle.dumps(gradients))
-            self.client.send('FINISH'.encode(encoding=ENCODING))
-            print('Sent gradients')
-
-            # Recieve aggregated gradients and update model
-            self.update_model()
-            print ('Recieved aggregated gradients and updated model')
-
-            accuracy = self.evaluate_model()
-            print('Accuracy: {}%'.format(accuracy))
-
     def __init__(
         self,
+        device_num,
         dataset_name,
         lr,
         num_samples_per_device,
@@ -90,6 +78,7 @@ class SingleModelClient:
         sampling_method,
         server_ip,
     ):
+        self.device_num             = device_num
         self.dataset_name           = dataset_name
         self.lr                     = lr
         self.num_samples_per_device = num_samples_per_device
@@ -100,7 +89,7 @@ class SingleModelClient:
         self.num_compute = 0 # number of times calculating gradient
 
         # Create model
-        self.model = Net()
+        self.model = Net_MNIST()
 
         # Create local dataset
         self.dataset = get_dataset(self.dataset_name, self.num_samples_per_device, self.sampling_method)
@@ -110,13 +99,13 @@ class SingleModelClient:
         self.client.connect((self.server_ip, PORT))
 
 def main():
-    print("********** Federated Serving: CLIENTS **********")
+    print("********** Federated Serving: devices **********")
 
     # Parse arguments
     parser = argparse.ArgumentParser()
-    parser.add_argument("--dataset-name", type=str, default='cifar10', help='Dataset')
+    parser.add_argument("--dataset-name", type=str, default='mnist', help='Dataset')
     parser.add_argument("--lr", type=float, default=0.0001, help='Learning rate')
-    parser.add_argument("--num-devices", type=int, default=1, help='Number of devices.')
+    parser.add_argument("--num-devices", type=int, default=10, help='Number of devices.')
     parser.add_argument("--num-rounds", type=int, default=100, help='Number of rounds.')
     parser.add_argument("--num-samples-per-device", type=int, default=5000, help='Number of training samples per device.')
     parser.add_argument("--num-samples-per-update", type=int, default=100, help='Number of training samples per device update.')
@@ -124,12 +113,39 @@ def main():
     parser.add_argument("--server-ip", type=str, default='localhost', help='Server IP address')
     args = parser.parse_args()
 
-    for client_num in range(1, args.num_devices+1):
-        client = SingleModelClient(args.dataset_name, args.lr, args.num_samples_per_device, args.num_samples_per_update, args.sampling_method, args.server_ip)
-        print('CLIENT ({}/{}) connected to server @ {}:{}'.format(client_num, args.num_devices, args.server_ip, PORT))
+    devices = []
+    for device_num in range(args.num_devices):
+        devices.append(SingleModelClient(device_num+1, args.dataset_name, args.lr, args.num_samples_per_device, args.num_samples_per_update, args.sampling_method, args.server_ip))
+        print('CLIENT ({}/{}) connected to server @ {}:{}'.format(device_num+1, args.num_devices, args.server_ip, PORT))
     
-    for client_num in range(1, args.num_devices+1):
-        client.run()
+    while True:
+        # Compute gradients
+        gradients = []
+        for device_num in range(args.num_devices):
+            gradients.append(devices[device_num].compute_gradient())
+            # print('{} Computed gradients'.format(device_num+1))
+
+        # Send gradients
+        for device_num in range(args.num_devices):
+            try:
+                devices[device_num].client.send(pickle.dumps(gradients[device_num]))
+                devices[device_num].client.send('FINISH'.encode(encoding=ENCODING))
+            except:
+                sys.exit('Server shut down. Finished training.')
+            # print('{} Sent gradients'.format(device_num+1))
+
+        # Recieve model weights and update model
+        for device_num in range(args.num_devices):
+            devices[device_num].update_model()
+            # print ('{} Recieved model weights and updated model'.format(device_num+1))
+
+        # Accuracy evaluation
+        accuracies = []
+        for device_num in range(args.num_devices):
+            accuracies.append(devices[device_num].evaluate_model())
+        print('Mean Acc: {}%'.format(np.mean(accuracies)))
+        print('All Accs: {}%'.format(accuracies))
+            
 
 if __name__ == '__main__':
     main()

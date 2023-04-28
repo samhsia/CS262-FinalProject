@@ -40,7 +40,16 @@ def get_dataset(dataset_name, num_samples, sampling_method):
     if dataset_name == 'mnist':
         from torchvision.datasets import MNIST
         dataset = MNIST(root='.', train=True, download=True)
-        sys.exit('MNIST not implemented yet.')
+        X_train, Y_train = dataset.data, dataset.targets
+        X_train = X_train.reshape((X_train.shape[0], -1))
+        
+        active_labels = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+        
+        data = {}
+        for label in active_labels:
+            indices = np.where(Y_train == label)
+            data[label] = (X_train[indices], Y_train[indices])
+
     elif dataset_name == 'cifar10':
         from torchvision.datasets import CIFAR10
         dataset = CIFAR10(root='.', train=True, download=True)
