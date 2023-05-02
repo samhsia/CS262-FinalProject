@@ -51,7 +51,7 @@ class SingleModelServer:
                 if round > 40:
                     for layer in device_gradients:
                         profile_max.append(torch.max(torch.abs(layer)))
-                        print(torch.max(torch.abs(layer)))
+                        # print(torch.max(torch.abs(layer)))
                         if torch.max(torch.abs(layer)) > self.normal_max:
                             # print(sock_idx, torch.max(torch.abs(layer)) )
                             Anomaly = True

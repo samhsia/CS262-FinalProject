@@ -116,7 +116,7 @@ def main():
     parser.add_argument("--server-ip", type=str, default='localhost', help='Server IP address')
     parser.add_argument("--enable-malicious-agent", type=str, default='False', help='Enable malicious agents.')
     parser.add_argument("--num-malicious-agent", type=int, default=1, help='Number of malicious agents.')
-    parser.add_argument("--noise-level", type=int, default=1, help='Multiply of random.random (0~1)')
+    parser.add_argument("--noise-level", type=int, default=10, help='Multiply of random.random (0~1)')
     args = parser.parse_args()
 
     devices = []
