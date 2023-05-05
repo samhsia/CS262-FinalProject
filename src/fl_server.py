@@ -44,17 +44,30 @@ class SingleModelServer:
                         continue
                 device_gradients.append(msg)
             device_gradients = pickle.loads(b"".join(device_gradients))
+            count = 0
+            for layer in device_gradients:
+                count += 1
+            
             # Anomaly detection
             if self.enable_anomaly_detection == "True":
                 if sock_idx in self.list_of_malicious_agent:
                     continue
                 if round > 40:
+                    count = 0
                     for layer in device_gradients:
                         profile_max.append(torch.max(torch.abs(layer)))
                         # print(torch.max(torch.abs(layer)))
-                        if torch.max(torch.abs(layer)) > self.normal_max:
+                        if torch.max(torch.abs(layer)) > self.normal_max[count]:
                             # print(sock_idx, torch.max(torch.abs(layer)) )
                             Anomaly = True
+                        count += 1
+                elif round > 30 and round < 40: # Record the upper bound for each layer
+                    count = 0
+                    for layer in device_gradients:
+                        max = torch.max(torch.abs(layer)) * 1.1
+                        if max > self.normal_max[count]:
+                            self.normal_max[count] = max
+                        count += 1
                 
             if not Anomaly:
                 # Change to only add if you are a participating device
@@ -112,7 +125,7 @@ class SingleModelServer:
         self.perc_devices_per_round     = perc_devices_per_round # not implemented yet!
         
         # Noise injection and anomaly detection
-        self.normal_max                 = 1 # normal maximum parameter value
+        self.normal_max                 = [0,0,0,0,0,0,0,0] # normal maximum parameter value
         self.num_malicious_agent        = 0
         self.count_of_anomaly           = [0] * self.num_devices 
         self.list_of_malicious_agent    = [] 
