@@ -117,6 +117,7 @@ def main():
     parser.add_argument("--enable-malicious-agent", type=str, default='False', help='Enable malicious agents.')
     parser.add_argument("--num-malicious-agent", type=int, default=1, help='Number of malicious agents.')
     parser.add_argument("--noise-level", type=int, default=10, help='Multiply of random.random (0~1)')
+    parser.add_argument("--noise-type", type=int, default=0, help='0: white noise (random noise for each value), 1: uniform noise (one random noise for each layer)')
     args = parser.parse_args()
 
     devices = []
@@ -138,7 +139,14 @@ def main():
             if args.enable_malicious_agent == "True":
                 if iteration > 40:
                     if device_num < args.num_malicious_agent:
-                        tmp_grad[0] += (args.noise_level * random.random())
+                        # tmp_grad[0] += (args.noise_level * random.random())
+                        
+                        for layer_grad in tmp_grad:
+                            if args.noise_type == 0:
+                                layer_grad += (2 * args.noise_level * torch.rand(layer_grad.shape) - args.noise_level)
+                            else:
+                                layer_grad += (2 * args.noise_level * random.random() - args.noise_level)
+                            
             gradients.append(tmp_grad)
             # print('{} Computed gradients'.format(device_num+1))
 
