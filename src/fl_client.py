@@ -16,7 +16,7 @@ import random
 ENCODING    = 'utf-8' # message encoding
 BUFFER_SIZE = 2048 # fixed 2KB buffer size
 PORT        = 1234 # fixed application port
-
+PRINT_INFO = True
 class SingleModelClient:
     def compute_gradient(self):
         self.model.train()
@@ -129,7 +129,8 @@ def main():
     iteration = 0
     while True:
         iteration += 1
-        print("iteration ", iteration)
+        if PRINT_INFO:
+            print("iteration ", iteration)
         # Compute gradients
         gradients = []
         for device_num in range(args.num_devices):
@@ -168,8 +169,9 @@ def main():
         accuracies = []
         for device_num in range(args.num_devices):
             accuracies.append(devices[device_num].evaluate_model())
-        print('Mean Acc: {}%'.format(np.mean(accuracies)))
-        print('All Accs: {}%'.format(accuracies))
+        if PRINT_INFO:
+            print('Mean Acc: {}%'.format(np.mean(accuracies)))
+            print('All Accs: {}%'.format(accuracies))
             
 
 if __name__ == '__main__':

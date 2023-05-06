@@ -9,6 +9,7 @@ from threading import Thread
 from net import Net_CIFAR, Net_MNIST
 import torch
 import random
+import time
 
 # Constants/configurations
 ENCODING    = 'utf-8' # message encoding
@@ -17,14 +18,16 @@ PORT        = 1234 # base application port for leader server
 
 SERVER_IP      = 'localhost' # REPLACE ME with output of ipconfig getifaddr en0
 MAX_CLIENTS    = 100
-
+PRINT_INFO = True
+overhead = []
 profile_max = []
 class SingleModelServer:
     def aggregate_gradients(self, round):
         sum_of_gradients = None
         self.num_malicious_agent = 0
-        print("self.list_of_malicious_agent: ", self.list_of_malicious_agent)
-        print("self.count_of_anomaly: ", self.count_of_anomaly)
+        if PRINT_INFO:
+            print("self.list_of_malicious_agent: ", self.list_of_malicious_agent)
+            print("self.count_of_anomaly: ", self.count_of_anomaly)
 
         for sock_idx, sock in enumerate(self.active_sockets):
             Anomaly = False
@@ -52,7 +55,10 @@ class SingleModelServer:
             if self.enable_anomaly_detection == "True":
                 if sock_idx in self.list_of_malicious_agent:
                     continue
+                
                 if round > 40:
+                    # Overhead of anomaly detection
+                    # start = time.time()
                     count = 0
                     for layer in device_gradients:
                         profile_max.append(torch.max(torch.abs(layer)))
@@ -61,6 +67,9 @@ class SingleModelServer:
                             # print(sock_idx, torch.max(torch.abs(layer)) )
                             Anomaly = True
                         count += 1
+                    # Overhead of anomaly detection
+                    # end = time.time()
+                    # overhead.append(end - start)
                 elif round > 30 and round < 40: # Record the upper bound for each layer
                     count = 0
                     for layer in device_gradients:
@@ -92,7 +101,8 @@ class SingleModelServer:
         for round in range(1, self.num_rounds+1):
             # Recieve and aggregate gradients
             aggregated_gradients = self.aggregate_gradients(round)
-            print('Recieved and aggregated gradients')
+            if PRINT_INFO:
+                print('Recieved and aggregated gradients')
 
             # Update model
             for variable, gradient in zip(self.model.parameters(), aggregated_gradients):
@@ -100,16 +110,17 @@ class SingleModelServer:
                 # Add noise to the final server model
                 # variable.data += random.random()
                 # print(random.randint(0,9))
-            print('Updated model')
+            if PRINT_INFO:
+                print('Updated model')
 
             # Send model weights
             model_weights = [x.data for x in self.model.parameters()]
             for sock in self.active_sockets:
                 sock.send(pickle.dumps(model_weights))
                 sock.send('FINISH'.encode(encoding=ENCODING))
-            print('Sent model weights')
-
-            print('Round {}/{} finished'.format(round, self.num_rounds))
+            if PRINT_INFO:
+                print('Sent model weights')
+                print('Round {}/{} finished'.format(round, self.num_rounds))
 
     def __init__(
         self, 
@@ -169,7 +180,18 @@ def main():
     args = parser.parse_args()
 
     server = SingleModelServer(args.lr, args.num_devices, args.num_rounds, args.perc_devices_per_round, args.enable_anomaly_detection)
+    
+    # print("timer start")
+    # start = time.time()
     server.run()
+    # end = time.time()
+    # print("timer end")
+    # print("time: ", end - start)
+
+    # Overhead of anomaly detection
+    # print(overhead)
+    # print(sum(overhead)/ len(overhead))
+    
 
 if __name__ == '__main__':
     main()
