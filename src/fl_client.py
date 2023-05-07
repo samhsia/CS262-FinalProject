@@ -185,7 +185,7 @@ def main():
             break
 
     all_accuracies = np.array(all_accuracies)
-    with open('accuracies_1agent_10noise.npy', 'wb') as outfile:
+    with open('accuracies_3agent_10noise.npy', 'wb') as outfile:
         np.save(outfile, all_accuracies)
             
 if __name__ == '__main__':
