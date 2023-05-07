@@ -159,7 +159,8 @@ def main():
                 devices[device_num].client.send(pickle.dumps(gradients[device_num]))
                 devices[device_num].client.send('FINISH'.encode(encoding=ENCODING))
             except:
-                sys.exit('Server shut down. Finished training.')
+                print('Server shut down. Finished training.')
+                break
         if PRINT_INFO:
             print('All devices sent gradients')
 
@@ -185,7 +186,7 @@ def main():
             break
 
     all_accuracies = np.array(all_accuracies)
-    with open('accuracies_3agent_10noise.npy', 'wb') as outfile:
+    with open('accuracies_1agent_1noise_ad.npy', 'wb') as outfile:
         np.save(outfile, all_accuracies)
             
 if __name__ == '__main__':
