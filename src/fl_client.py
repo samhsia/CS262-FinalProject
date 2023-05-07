@@ -16,7 +16,8 @@ import random
 ENCODING    = 'utf-8' # message encoding
 BUFFER_SIZE = 2048 # fixed 2KB buffer size
 PORT        = 1234 # fixed application port
-PRINT_INFO = True
+PRINT_INFO  = True
+
 class SingleModelClient:
     def compute_gradient(self):
         self.model.train()
@@ -79,7 +80,6 @@ class SingleModelClient:
         num_samples_per_update,
         sampling_method,
         server_ip,
-        enable_malicious_agent
     ):
         self.device_num             = device_num
         self.dataset_name           = dataset_name
@@ -88,7 +88,6 @@ class SingleModelClient:
         self.num_samples_per_update = num_samples_per_update
         self.sampling_method        = sampling_method
         self.server_ip              = server_ip
-        self.enable_malicious_agent = enable_malicious_agent
         self.num_compute = 0 # number of times calculating gradient
 
         # Create model
@@ -117,39 +116,35 @@ def main():
     parser.add_argument("--enable-malicious-agent", type=str, default='False', help='Enable malicious agents.')
     parser.add_argument("--num-malicious-agent", type=int, default=1, help='Number of malicious agents.')
     parser.add_argument("--noise-level", type=int, default=10, help='Multiple of random.random (0~1)')
-    parser.add_argument("--noise-type", type=int, default=0, help='0: white noise (random noise for each value), 1: uniform noise (one random noise for each layer)')
+    parser.add_argument("--noise-type", type=int, default=0, help='0: white noise (random noise for each value); 1: uniform noise (one random noise value for each layer)')
     args = parser.parse_args()
 
     devices = []
     for device_num in range(args.num_devices):
-        devices.append(SingleModelClient(device_num+1, args.dataset_name, args.lr, args.num_samples_per_device, args.num_samples_per_update, args.sampling_method, args.server_ip, args.enable_malicious_agent))
+        devices.append(SingleModelClient(device_num+1, args.dataset_name, args.lr, args.num_samples_per_device, args.num_samples_per_update, args.sampling_method, args.server_ip))
         print('CLIENT ({}/{}) connected to server @ {}:{}'.format(device_num+1, args.num_devices, args.server_ip, PORT))
 
-    # malicious_agent = random.randint(0,args.num_devices-1)
-    iteration = 0
+    iteration = 1
     while True:
-        iteration += 1
         if PRINT_INFO:
-            print("iteration ", iteration)
+            print("Iteration {}".format(iteration))
         # Compute gradients
         gradients = []
         for device_num in range(args.num_devices):
             tmp_grad = devices[device_num].compute_gradient()
-            # print(torch.max(torch.abs(tmp_grad[0])))
             # Malicious agent: noisy gradient update
             if args.enable_malicious_agent == "True":
                 if iteration > 40:
+                    # Malicious agent assignments starts from 0
                     if device_num < args.num_malicious_agent:
-                        # tmp_grad[0] += (args.noise_level * random.random())
-                        
                         for layer_grad in tmp_grad:
                             if args.noise_type == 0:
                                 layer_grad += (2 * args.noise_level * torch.rand(layer_grad.shape) - args.noise_level)
                             else:
-                                layer_grad += (2 * args.noise_level * random.random() - args.noise_level)
-                            
+                                layer_grad += (2 * args.noise_level * random.random() - args.noise_level)      
             gradients.append(tmp_grad)
-            # print('{} Computed gradients'.format(device_num+1))
+        if PRINT_INFO:
+            print('All devices computed gradients')
 
         # Send gradients
         for device_num in range(args.num_devices):
@@ -158,12 +153,14 @@ def main():
                 devices[device_num].client.send('FINISH'.encode(encoding=ENCODING))
             except:
                 sys.exit('Server shut down. Finished training.')
-            # print('{} Sent gradients'.format(device_num+1))
+        if PRINT_INFO:
+            print('All devices sent gradients')
 
         # Recieve model weights and update model
         for device_num in range(args.num_devices):
             devices[device_num].update_model()
-            # print ('{} Recieved model weights and updated model'.format(device_num+1))
+        if PRINT_INFO:
+            print ('All devices recieved model weights and updated model')
 
         # Accuracy evaluation
         accuracies = []
@@ -172,6 +169,7 @@ def main():
         if PRINT_INFO:
             print('Mean Acc: {}%'.format(np.mean(accuracies)))
             print('All Accs: {}%'.format(accuracies))
+        iteration += 1
             
 
 if __name__ == '__main__':

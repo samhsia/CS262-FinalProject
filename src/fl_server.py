@@ -1,37 +1,36 @@
 # Import packages
 import argparse
+import numpy as np
 import pickle
 
-import random
 from socket import socket, AF_INET, SOCK_STREAM, SOL_SOCKET, SO_REUSEADDR
-from threading import Thread
 
 from net import Net_CIFAR, Net_MNIST
+import sys
+from time import time
 import torch
-import random
-import time
 
 # Constants/configurations
 ENCODING    = 'utf-8' # message encoding
 BUFFER_SIZE = 2048 # fixed 2KB buffer size
 PORT        = 1234 # base application port for leader server
 
-SERVER_IP      = 'localhost' # REPLACE ME with output of ipconfig getifaddr en0
-MAX_CLIENTS    = 100
-PRINT_INFO = True
-overhead = []
-profile_max = []
+SERVER_IP   = 'localhost' # REPLACE ME with output of ipconfig getifaddr en0
+MAX_CLIENTS = 100
+PRINT_INFO  = True
+
+# Variables used for profiling
+t_overhead    = [] # latency overhead of range detector
+profile_max = [] # maximum gradient value recieved from client
+
 class SingleModelServer:
     def aggregate_gradients(self, round):
         sum_of_gradients = None
-        self.num_malicious_agent = 0
-        if PRINT_INFO:
-            print("self.list_of_malicious_agent: ", self.list_of_malicious_agent)
-            print("self.count_of_anomaly: ", self.count_of_anomaly)
 
         for sock_idx, sock in enumerate(self.active_sockets):
-            Anomaly = False
             device_gradients = []
+            anomaly_deteced  = False # by default no anomaly detected
+
             while True:
                 msg = sock.recv(BUFFER_SIZE)
                 if not msg:
@@ -47,53 +46,53 @@ class SingleModelServer:
                         continue
                 device_gradients.append(msg)
             device_gradients = pickle.loads(b"".join(device_gradients))
-            count = 0
-            for layer in device_gradients:
-                count += 1
             
             # Anomaly detection
             if self.enable_anomaly_detection == "True":
-                if sock_idx in self.list_of_malicious_agent:
+                # If device is already identified as malicious, skip the gradients from this device
+                if sock_idx in self.list_of_malicious_agents:
                     continue
                 
+                # Enable anomaly detection past round 40
                 if round > 40:
-                    # Overhead of anomaly detection
-                    # start = time.time()
-                    count = 0
-                    for layer in device_gradients:
+                    t_overhead_start = time()
+                    for count, layer in enumerate(device_gradients):
                         profile_max.append(torch.max(torch.abs(layer)))
-                        # print(torch.max(torch.abs(layer)))
                         if torch.max(torch.abs(layer)) > self.normal_max[count]:
-                            # print(sock_idx, torch.max(torch.abs(layer)) )
-                            Anomaly = True
-                        count += 1
-                    # Overhead of anomaly detection
-                    # end = time.time()
-                    # overhead.append(end - start)
-                elif round > 30 and round < 40: # Record the upper bound for each layer
-                    count = 0
-                    for layer in device_gradients:
+                            anomaly_deteced = True
+                    t_overhead_end = time()
+                    t_overhead.append(t_overhead_end - t_overhead_start)
+
+                # Between rounds 30 and 40, record the upper bounds of each layer
+                elif round > 30:
+                    for count, layer in enumerate(device_gradients):
                         max = torch.max(torch.abs(layer)) * 1.1
                         if max > self.normal_max[count]:
                             self.normal_max[count] = max
-                        count += 1
-                
-            if not Anomaly:
+
+            # This socket is not deemed a malicious agent
+            if not anomaly_deteced:
                 # Change to only add if you are a participating device
                 if sum_of_gradients is None:
                     sum_of_gradients = device_gradients # first device gradient
                 else:
                     sum_of_gradients = [x.data+device_gradients[i].data for i,x in enumerate(sum_of_gradients)]
+            
+            # This socket is a newly discovered malicious agent
             else:
                 self.count_of_anomaly[sock_idx] += 1
-                if self.count_of_anomaly[sock_idx] > 1:
-                    self.list_of_malicious_agent.append(sock_idx)
-                self.num_malicious_agent += 1
-            
-                
+                self.list_of_malicious_agents.append(sock_idx)
+                self.num_malicious_agents += 1
+
+        if PRINT_INFO:
+            print("self.num_malicious_agents: {}".format(self.num_malicious_agents))
+            print("self.list_of_malicious_agents: {}".format(self.list_of_malicious_agents))
+            print("self.count_of_anomaly: {}".format(self.count_of_anomaly))
+        
+        if sum_of_gradients is None:
+            return None # all clients marked as malicious
         for i, gradient in enumerate(sum_of_gradients):
-            # *** sum_of_gradients[i] = gradient + NOISE
-            sum_of_gradients[i] = gradient / (self.num_devices - self.num_malicious_agent) # change to participating devices
+            sum_of_gradients[i] = gradient / (self.num_devices - self.num_malicious_agents) # change to participating devices
         
         return sum_of_gradients
     
@@ -101,26 +100,27 @@ class SingleModelServer:
         for round in range(1, self.num_rounds+1):
             # Recieve and aggregate gradients
             aggregated_gradients = self.aggregate_gradients(round)
-            if PRINT_INFO:
-                print('Recieved and aggregated gradients')
+            
+            if aggregated_gradients:
+                if PRINT_INFO:
+                    print('Recieved and aggregated gradients')
 
-            # Update model
-            for variable, gradient in zip(self.model.parameters(), aggregated_gradients):
-                variable.data.sub_(self.lr * gradient)
-                # Add noise to the final server model
-                # variable.data += random.random()
-                # print(random.randint(0,9))
-            if PRINT_INFO:
-                print('Updated model')
+                # Update model
+                for variable, gradient in zip(self.model.parameters(), aggregated_gradients):
+                    variable.data.sub_(self.lr * gradient)
+                if PRINT_INFO:
+                    print('Updated model')
 
-            # Send model weights
-            model_weights = [x.data for x in self.model.parameters()]
-            for sock in self.active_sockets:
-                sock.send(pickle.dumps(model_weights))
-                sock.send('FINISH'.encode(encoding=ENCODING))
-            if PRINT_INFO:
-                print('Sent model weights')
-                print('Round {}/{} finished'.format(round, self.num_rounds))
+                # Send model weights
+                model_weights = [x.data for x in self.model.parameters()]
+                for sock in self.active_sockets:
+                    sock.send(pickle.dumps(model_weights))
+                    sock.send('FINISH'.encode(encoding=ENCODING))
+                if PRINT_INFO:
+                    print('Sent model weights')
+                    print('Round {}/{} finished'.format(round, self.num_rounds))
+            else:
+                return
 
     def __init__(
         self, 
@@ -130,17 +130,21 @@ class SingleModelServer:
         perc_devices_per_round,
         enable_anomaly_detection
     ):
-        self.lr                         = lr
-        self.num_devices                = num_devices
-        self.num_rounds                 = num_rounds
-        self.perc_devices_per_round     = perc_devices_per_round # not implemented yet!
+        self.lr                     = lr
+        self.num_devices            = num_devices
+        self.num_rounds             = num_rounds
+        self.perc_devices_per_round = perc_devices_per_round # not implemented yet!
+        
         
         # Noise injection and anomaly detection
-        self.normal_max                 = [0,0,0,0,0,0,0,0] # normal maximum parameter value
-        self.num_malicious_agent        = 0
-        self.count_of_anomaly           = [0] * self.num_devices 
-        self.list_of_malicious_agent    = [] 
-        self.enable_anomaly_detection   = enable_anomaly_detection
+        self.enable_anomaly_detection = enable_anomaly_detection
+        number_of_layers              = 4
+        number_of_param_layers        = 2 * number_of_layers
+        self.normal_max               = [0] * number_of_param_layers # per-layer range detector
+        self.num_malicious_agents     = 0
+        self.list_of_malicious_agents = []
+        self.count_of_anomaly         = [0] * self.num_devices 
+        
         # Running stats
         self.accs           = []
         self.mean_accs      = []
@@ -176,22 +180,19 @@ def main():
     parser.add_argument("--num-devices", type=int, default=10, help='Number of devices.')
     parser.add_argument("--num-rounds", type=int, default=100, help='Number of rounds.')
     parser.add_argument("--perc-devices-per-round", type=float, default=1.0, help='Target percentage of devices participating in each round.')
-    parser.add_argument("--enable-anomaly-detection", type=str, default=False, help='Enable anomaly detection to recover from noisy gradient update of malicious agent.')
+    parser.add_argument("--enable-anomaly-detection", type=str, default='False', help='Enable anomaly detection to recover from noisy gradient update of malicious agent.')
     args = parser.parse_args()
 
     server = SingleModelServer(args.lr, args.num_devices, args.num_rounds, args.perc_devices_per_round, args.enable_anomaly_detection)
     
-    # print("timer start")
-    # start = time.time()
+    t_start = time()
     server.run()
-    # end = time.time()
-    # print("timer end")
-    # print("time: ", end - start)
+    t_end = time()
+    print('Total experiment time: {} s'.format(t_end - t_start))
 
     # Overhead of anomaly detection
-    # print(overhead)
-    # print(sum(overhead)/ len(overhead))
-    
+    if args.enable_anomaly_detection == 'True':
+        print('Range Detector Overhead: {} s'.format(np.sum(t_overhead)))
 
 if __name__ == '__main__':
     main()
