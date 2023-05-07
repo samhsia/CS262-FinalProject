@@ -175,7 +175,7 @@ def main():
         accuracies = []
         for device_num in range(args.num_devices):
             accuracies.append(devices[device_num].evaluate_model())
-            all_accuracies.append(accuracies)
+        all_accuracies.append(accuracies)
         if PRINT_INFO:
             print('Mean Acc: {}%'.format(np.mean(accuracies)))
             print('All Accs: {}%'.format(accuracies))
@@ -185,7 +185,7 @@ def main():
             break
 
     all_accuracies = np.array(all_accuracies)
-    with open('accuracies_1agent_1noise_ad.npy', 'wb') as outfile:
+    with open('accuracies_1agent_10noise.npy', 'wb') as outfile:
         np.save(outfile, all_accuracies)
             
 if __name__ == '__main__':
