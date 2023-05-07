@@ -8,3 +8,5 @@ Noise level and number of malicious agents can be adjusted with the `--noise-lev
 
 - Lastly, to enable anomaly detection and recovery, run `python3 fl_server.py --enable-anomaly-detection "True"` for the first terminal and `python3 fl_client.py --enable-malicious-agent "True" --noise-level 1 --num-malicious-agents 1` for the second.
 Again, noise level and number of malicious agents can be adjusted with the `--noise-level` and `num-malicious-agents` flags, respectively.
+
+Our design notebook is located [here](https://docs.google.com/document/d/1jnjmIV0m2-V_2n1Y7F1b-T_4Ihv0LchmqN-aC5gg7Z8/edit?usp=sharing).
