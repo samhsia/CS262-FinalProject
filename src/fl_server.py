@@ -81,8 +81,9 @@ class SingleModelServer:
             # This socket is a newly discovered malicious agent
             else:
                 self.count_of_anomaly[sock_idx] += 1
-                self.list_of_malicious_agents.append(sock_idx)
-                self.num_malicious_agents += 1
+                if self.count_of_anomaly[sock_idx] > 1:
+                    self.list_of_malicious_agents.append(sock_idx)
+                    self.num_malicious_agents += 1
 
         if PRINT_INFO:
             print("self.num_malicious_agents: {}".format(self.num_malicious_agents))

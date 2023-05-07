@@ -52,11 +52,16 @@ class SingleModelClient:
                     new_model_weights.append(msg)
                     continue
             new_model_weights.append(msg)
-        new_model_weights = pickle.loads(b"".join(new_model_weights))
-        
-        # Update model
-        for variable, new_weights in zip(self.model.parameters(), new_model_weights):
-            variable.data = new_weights # *** + NOISE
+        # Try to update model. Return True if successful.
+        try:
+            new_model_weights = pickle.loads(b"".join(new_model_weights))
+            
+            # Update model
+            for variable, new_weights in zip(self.model.parameters(), new_model_weights):
+                variable.data = new_weights # *** + NOISE
+            return True
+        except:
+            return False
 
     def evaluate_model(self):
         self.model.eval()
@@ -114,12 +119,14 @@ def main():
     parser.add_argument("--sampling-method", type=str, default='iid', help='Dataset sampling method')
     parser.add_argument("--server-ip", type=str, default='localhost', help='Server IP address')
     parser.add_argument("--enable-malicious-agent", type=str, default='False', help='Enable malicious agents.')
-    parser.add_argument("--num-malicious-agent", type=int, default=1, help='Number of malicious agents.')
+    parser.add_argument("--num-malicious-agents", type=int, default=1, help='Number of malicious agents.')
     parser.add_argument("--noise-level", type=int, default=10, help='Multiple of random.random (0~1)')
     parser.add_argument("--noise-type", type=int, default=0, help='0: white noise (random noise for each value); 1: uniform noise (one random noise value for each layer)')
     args = parser.parse_args()
 
-    devices = []
+    devices        = []
+    all_accuracies = []
+
     for device_num in range(args.num_devices):
         devices.append(SingleModelClient(device_num+1, args.dataset_name, args.lr, args.num_samples_per_device, args.num_samples_per_update, args.sampling_method, args.server_ip))
         print('CLIENT ({}/{}) connected to server @ {}:{}'.format(device_num+1, args.num_devices, args.server_ip, PORT))
@@ -136,7 +143,7 @@ def main():
             if args.enable_malicious_agent == "True":
                 if iteration > 40:
                     # Malicious agent assignments starts from 0
-                    if device_num < args.num_malicious_agent:
+                    if device_num < args.num_malicious_agents:
                         for layer_grad in tmp_grad:
                             if args.noise_type == 0:
                                 layer_grad += (2 * args.noise_level * torch.rand(layer_grad.shape) - args.noise_level)
@@ -158,7 +165,9 @@ def main():
 
         # Recieve model weights and update model
         for device_num in range(args.num_devices):
-            devices[device_num].update_model()
+            update_success = devices[device_num].update_model()
+            if not update_success:
+                break
         if PRINT_INFO:
             print ('All devices recieved model weights and updated model')
 
@@ -166,11 +175,18 @@ def main():
         accuracies = []
         for device_num in range(args.num_devices):
             accuracies.append(devices[device_num].evaluate_model())
+            all_accuracies.append(accuracies)
         if PRINT_INFO:
             print('Mean Acc: {}%'.format(np.mean(accuracies)))
             print('All Accs: {}%'.format(accuracies))
         iteration += 1
-            
 
+        if iteration > 100:
+            break
+
+    all_accuracies = np.array(all_accuracies)
+    with open('accuracies_1agent_1noise_ad.npy', 'wb') as outfile:
+        np.save(outfile, all_accuracies)
+            
 if __name__ == '__main__':
     main()
