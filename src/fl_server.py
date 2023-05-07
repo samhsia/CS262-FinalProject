@@ -21,7 +21,6 @@ PRINT_INFO  = True
 
 # Variables used for profiling
 t_overhead    = [] # latency overhead of range detector
-profile_max = [] # maximum gradient value recieved from client
 
 class SingleModelServer:
     def aggregate_gradients(self, round):
@@ -57,7 +56,6 @@ class SingleModelServer:
                 if round > 40:
                     t_overhead_start = time()
                     for count, layer in enumerate(device_gradients):
-                        profile_max.append(torch.max(torch.abs(layer)))
                         if torch.max(torch.abs(layer)) > self.normal_max[count]:
                             anomaly_deteced = True
                     t_overhead_end = time()
