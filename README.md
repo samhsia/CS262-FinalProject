@@ -1,6 +1,6 @@
 # CS262 Final Project: Noise-Tolerant Federated Learning
 
-- To run the baseline experiment (i.e., no noise), open two terminals.
+- To run the baseline experiment (i.e., no noise), open two terminals and run `cd src/`.
 Run `python3 fl_server.py` in the first terminal and `python3 fl_client.py` in the second terminal.
 
 - To enable noise injection, run `python3 fl_server.py` in the first terminal (unchanged) and `python3 fl_client.py --enable-malicious-agent "True" --noise-level 1 --num-malicious-agents 1` for the second.
